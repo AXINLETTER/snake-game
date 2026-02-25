@@ -108,6 +108,7 @@ function draw() {
             ctx.fillStyle = '#81C784';
             ctx.shadowBlur = 0;
         }
+        // 绘制在格子内，留出1px边距
         ctx.fillRect(segment.x + 1, segment.y + 1, gridSize - 2, gridSize - 2);
     });
     
@@ -149,8 +150,13 @@ function update() {
         }
     }
     
-    // 吃食物检测
-    const ateFood = (head.x === food.x && head.y === food.y);
+    // 吃食物检测 - 使用中心点碰撞检测，更宽松
+    const headCenterX = head.x + gridSize / 2;
+    const headCenterY = head.y + gridSize / 2;
+    const foodCenterX = food.x + gridSize / 2;
+    const foodCenterY = food.y + gridSize / 2;
+    const distance = Math.sqrt(Math.pow(headCenterX - foodCenterX, 2) + Math.pow(headCenterY - foodCenterY, 2));
+    const ateFood = distance < gridSize;
     
     if (ateFood) {
         // 吃到食物，增加分数
