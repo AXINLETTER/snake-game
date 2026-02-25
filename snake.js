@@ -22,9 +22,17 @@ let highScore = localStorage.getItem('snakeHighScore') || 0;
 let gameLoop = null;
 let isGameRunning = false;
 let isPaused = false;
+let gameSpeed = 200; // 初始速度（毫秒），越大越慢
 
 // 初始化
 highScoreElement.textContent = highScore;
+
+// 根据分数计算游戏速度
+function getGameSpeed() {
+    // 基础速度 200ms，每得50分速度增加10ms（最快100ms）
+    const speedIncrease = Math.floor(score / 50) * 15;
+    return Math.max(100, 200 - speedIncrease);
+}
 
 // 初始化游戏
 function initGame() {
@@ -34,24 +42,37 @@ function initGame() {
     dx = gridSize;
     dy = 0;
     score = 0;
-    scoreElement.textContent = score;
+    gameSpeed = 200;
+    
+    // 确保DOM元素存在再更新
+    if (scoreElement) {
+        scoreElement.textContent = score;
+    }
+    
     generateFood();
     gameOverDiv.classList.add('hidden');
 }
 
 // 生成食物
 function generateFood() {
-    food = {
-        x: Math.floor(Math.random() * tileCount) * gridSize,
-        y: Math.floor(Math.random() * tileCount) * gridSize
-    };
+    let validPosition = false;
+    let attempts = 0;
     
-    // 确保食物不在蛇身上
-    for (let segment of snake) {
-        if (segment.x === food.x && segment.y === food.y) {
-            generateFood();
-            return;
+    while (!validPosition && attempts < 100) {
+        food = {
+            x: Math.floor(Math.random() * tileCount) * gridSize,
+            y: Math.floor(Math.random() * tileCount) * gridSize
+        };
+        
+        // 确保食物不在蛇身上
+        validPosition = true;
+        for (let segment of snake) {
+            if (segment.x === food.x && segment.y === food.y) {
+                validPosition = false;
+                break;
+            }
         }
+        attempts++;
     }
 }
 
@@ -61,32 +82,46 @@ function draw() {
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
+    // 绘制网格（可选，让游戏更好看）
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < tileCount; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * gridSize, 0);
+        ctx.lineTo(i * gridSize, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * gridSize);
+        ctx.lineTo(canvas.width, i * gridSize);
+        ctx.stroke();
+    }
+    
     // 绘制蛇
     snake.forEach((segment, index) => {
         if (index === 0) {
             // 蛇头
             ctx.fillStyle = '#4CAF50';
-            ctx.shadowBlur = 10;
+            ctx.shadowBlur = 15;
             ctx.shadowColor = '#4CAF50';
         } else {
             // 蛇身
             ctx.fillStyle = '#81C784';
             ctx.shadowBlur = 0;
         }
-        ctx.fillRect(segment.x, segment.y, gridSize - 2, gridSize - 2);
+        ctx.fillRect(segment.x + 1, segment.y + 1, gridSize - 2, gridSize - 2);
     });
     
     ctx.shadowBlur = 0;
     
     // 绘制食物
     ctx.fillStyle = '#FF5722';
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 20;
     ctx.shadowColor = '#FF5722';
     ctx.beginPath();
     ctx.arc(
         food.x + gridSize / 2,
         food.y + gridSize / 2,
-        gridSize / 2 - 2,
+        gridSize / 2 - 3,
         0,
         Math.PI * 2
     );
@@ -114,21 +149,42 @@ function update() {
         }
     }
     
-    snake.unshift(head);
-    
     // 吃食物检测
-    if (head.x === food.x && head.y === food.y) {
+    const ateFood = (head.x === food.x && head.y === food.y);
+    
+    if (ateFood) {
+        // 吃到食物，增加分数
         score += 10;
-        scoreElement.textContent = score;
         
+        // 更新分数显示
+        if (scoreElement) {
+            scoreElement.textContent = score;
+        }
+        
+        // 更新最高分
         if (score > highScore) {
             highScore = score;
-            highScoreElement.textContent = highScore;
+            if (highScoreElement) {
+                highScoreElement.textContent = highScore;
+            }
             localStorage.setItem('snakeHighScore', highScore);
         }
         
+        // 生成新食物
         generateFood();
-    } else {
+        
+        // 重新设置游戏速度
+        const newSpeed = getGameSpeed();
+        if (newSpeed !== gameSpeed) {
+            gameSpeed = newSpeed;
+            clearInterval(gameLoop);
+            gameLoop = setInterval(gameStep, gameSpeed);
+        }
+    }
+    
+    // 移动蛇
+    snake.unshift(head);
+    if (!ateFood) {
         snake.pop();
     }
 }
@@ -142,8 +198,13 @@ function gameStep() {
 // 游戏结束
 function gameOver() {
     clearInterval(gameLoop);
+    gameLoop = null;
     isGameRunning = false;
-    finalScoreElement.textContent = score;
+    
+    if (finalScoreElement) {
+        finalScoreElement.textContent = score;
+    }
+    
     gameOverDiv.classList.remove('hidden');
     startBtn.disabled = false;
     pauseBtn.disabled = true;
@@ -156,10 +217,20 @@ function startGame() {
     initGame();
     isGameRunning = true;
     isPaused = false;
-    gameLoop = setInterval(gameStep, 100);
+    gameSpeed = getGameSpeed();
+    
+    // 清除之前的循环
+    if (gameLoop) {
+        clearInterval(gameLoop);
+    }
+    
+    gameLoop = setInterval(gameStep, gameSpeed);
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     pauseBtn.textContent = '暂停';
+    
+    // 立即绘制一次
+    draw();
 }
 
 // 暂停/继续游戏
@@ -172,11 +243,16 @@ function togglePause() {
 
 // 键盘控制
 document.addEventListener('keydown', (e) => {
-    if (!isGameRunning || isPaused) {
-        if (e.key === ' ' && isGameRunning) {
-            e.preventDefault();
-            togglePause();
-        }
+    // 防止方向键滚动页面
+    if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+        e.preventDefault();
+    }
+    
+    if (!isGameRunning) {
+        return;
+    }
+    
+    if (isPaused && e.key !== ' ') {
         return;
     }
     
@@ -206,7 +282,6 @@ document.addEventListener('keydown', (e) => {
             }
             break;
         case ' ':
-            e.preventDefault();
             togglePause();
             break;
     }
@@ -219,3 +294,4 @@ restartBtn.addEventListener('click', startGame);
 
 // 初始绘制
 draw();
+console.log('贪吃蛇游戏已加载！');
